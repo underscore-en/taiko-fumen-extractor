@@ -8,8 +8,15 @@ class Beatmap(OrderedDict):
     category: str
     title: str
     inneroni: bool
-    stars: int
+    rating: int
     bpm: tuple[float, float]
+    
+class TrainingEntry(OrderedDict):
+    title: str
+    inneroni: bool
+    normalized_rating: int
+    official_rating_descriptor: str
+    training_category: str
 
 
 def parse_beatmap_htmls() -> list[Beatmap]:
@@ -41,7 +48,7 @@ def parse_beatmap_htmls() -> list[Beatmap]:
                 return (n1, n2)
             return None
 
-        def parse_stars_cell(text) -> int | None:
+        def parse_rating_cell(text) -> int | None:
             match = re.search(r"★×(\d+)", text)
             if match:
                 return int(match.group(1))
@@ -54,8 +61,8 @@ def parse_beatmap_htmls() -> list[Beatmap]:
             assert len(cols) == 9
             title = cols[2].find("strong").get_text()
             bpm = parse_bpm_cell(cols[3].get_text())
-            oni = parse_stars_cell(cols[7].get_text())
-            inner_oni = parse_stars_cell(cols[8].get_text())
+            oni = parse_rating_cell(cols[7].get_text())
+            inner_oni = parse_rating_cell(cols[8].get_text())
 
             beatmaps.append(
                 Beatmap(
@@ -63,7 +70,7 @@ def parse_beatmap_htmls() -> list[Beatmap]:
                     title=title,
                     inneroni=False,
                     bpm=bpm,
-                    stars=oni,
+                    rating=oni,
                 )
             )
 
@@ -74,7 +81,7 @@ def parse_beatmap_htmls() -> list[Beatmap]:
                         title=title,
                         inneroni=True,
                         bpm=bpm,
-                        stars=inner_oni,
+                        rating=inner_oni,
                     )
                 )
 
@@ -101,11 +108,42 @@ def parse_beatmap_htmls() -> list[Beatmap]:
 
     return beatmaps
 
+def parse_training_manual() -> list[str]:
+    with open("オススメ練習曲一覧 - 太鼓の達人 譜面とか Wiki_.html", "r", encoding="utf-8") as f:
+        html = f.read()
+    soup = BeautifulSoup(html, "html.parser")
+    training_entries = []
+    
+    categories = ['総合力', '体力・密度', '複合処理能力', '高速処理・アイマス譜面', '変則・技術譜面']
+    official_difficulties_descriptor = []
+    normalized_difficulty = 10
+    
+    # best effort parsing
+    for t_body_idx, t_body in enumerate(soup.find_all("tbody")[6:61]):
+        category = categories[t_body_idx % 5]
+        if t_body_idx % 5 == 0:
+            official_difficulties_descriptor = []
+        for t_row_idx, t_row in enumerate(t_body.find_all("tr")[1:]):
+            t_data = t_row.find_all('td')
+            if t_body_idx % 5 == 0: # row with "難易度"
+                official_difficulties_descriptor.append(t_data[0].get_text())
+            for beatmap_anchor in t_row.find_all('td')[1 if t_body_idx % 5 == 0 else 0].find_all('a'):
+                training_entries.append(TrainingEntry(
+                    title=beatmap_anchor.get_text(),
+                    inneroni=False, # to be filled later
+                    normalized_rating=normalized_difficulty,
+                    official_rating_descriptor=official_difficulties_descriptor[t_row_idx],
+                    training_category=category,
+                ))
+        if t_body_idx % 5 == 4:
+            normalized_difficulty -= 1
+            
+    return training_entries
+    
 
 def main():
     beatmaps = parse_beatmap_htmls()
-    pprint(beatmaps)
-
+    training_entries = parse_training_manual()
 
 if __name__ == "__main__":
     main()
